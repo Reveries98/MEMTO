@@ -19,7 +19,7 @@ class SWaTSegLoader(Dataset):
         self.win_size = win_size
         self.scaler = StandardScaler()
         data = pd.read_csv(data_path + '/train.csv', header=1)
-        data = data.values[:, 1:-1]
+        data = data.values[:, :-1]
 
         data = np.nan_to_num(data)
         self.scaler.fit(data)
@@ -34,7 +34,7 @@ class SWaTSegLoader(Dataset):
         labels = np.array(labels)
 
 
-        test_data = test_data.values[:, 1:-1]
+        test_data = test_data.values[:, :-1]
         test_data = np.nan_to_num(test_data)
 
         self.test = self.scaler.transform(test_data)
