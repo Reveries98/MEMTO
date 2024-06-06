@@ -18,8 +18,8 @@ class SWaTSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = pd.read_csv(data_path + '/train.csv', header=1)
-        data = data.values[:, 1:-1]
+        data = pd.read_csv(data_path + '/train.csv', header=0)
+        data = data.values[:, :-1]
 
         data = np.nan_to_num(data)
         self.scaler.fit(data)
@@ -30,14 +30,11 @@ class SWaTSegLoader(Dataset):
         y = test_data['Normal/Attack'].to_numpy()
         labels = []
         for i in y:
-            if i == 'Attack':
-                labels.append(1)
-            else:
-                labels.append(0)
+            labels.append(i)
         labels = np.array(labels)
 
 
-        test_data = test_data.values[:, 1:-1]
+        test_data = test_data.values[:, :-1]
         test_data = np.nan_to_num(test_data)
 
         self.test = self.scaler.transform(test_data)
@@ -125,14 +122,14 @@ class MSLSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = np.load(data_path + "/MSL_train.npy")
+        data = np.load(data_path + "/train.npy")
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = np.load(data_path + "/MSL_test.npy")
+        test_data = np.load(data_path + "/test.npy")
         self.test = self.scaler.transform(test_data)
 
         self.train = data
-        self.test_labels = np.load(data_path + "/MSL_test_label.npy")
+        self.test_labels = np.load(data_path + "/test_label.npy")
         print("test:", self.test.shape)
         print("train:", self.train.shape)
 
@@ -161,14 +158,14 @@ class SMAPSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = np.load(data_path + "/SMAP_train.npy")
+        data = np.load(data_path + "/train.npy")
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = np.load(data_path + "/SMAP_test.npy")
+        test_data = np.load(data_path + "/test.npy")
         self.test = self.scaler.transform(test_data)
 
         self.train = data
-        self.test_labels = np.load(data_path + "/SMAP_test_label.npy")
+        self.test_labels = np.load(data_path + "/test_label.npy")
         print("test:", self.test.shape)
         print("train:", self.train.shape)
 

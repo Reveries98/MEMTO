@@ -23,6 +23,7 @@ def k_means_clustering(x,n_mem,d_model):
     x = x.view([-1,d_model])
     print('running K Means Clustering. It takes few minutes to find clusters')
     # sckit-learn xxxx (cuda problem)
+    # _, cluster_centers = kmeans(X=x, num_clusters=n_mem, distance='euclidean',tol=0.0005, device=torch.device('cuda:0'))
     _, cluster_centers = kmeans(X=x, num_clusters=n_mem, distance='euclidean', device=torch.device('cuda:0'))
     print("time for conducting Kmeans Clustering :", time.time() - start)
     print('K means clustering is done!!!')

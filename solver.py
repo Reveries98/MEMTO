@@ -14,7 +14,7 @@ import logging
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
 
 def adjust_learning_rate(optimizer, epoch, lr_):
     lr_adjust = {epoch: lr_ * (0.5 ** ((epoch - 1) // 1))}
@@ -151,7 +151,7 @@ class Solver(object):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         if torch.cuda.is_available():
-            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1,2,3], output_device=0).to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1], output_device=0).to(self.device)
 
     def vali(self, vali_loader):
         self.model.eval()
@@ -250,6 +250,8 @@ class Solver(object):
         self.model.load_state_dict(
             torch.load(
                 os.path.join(str(self.model_save_path), str(self.dataset) + '_checkpoint_second_train.pth')))
+            # torch.load(
+            #     os.path.join(str(self.model_save_path), str(self.dataset) + '_checkpoint_first_train.pth')))
         self.model.eval()
         
         print("======================TEST MODE======================")
@@ -419,16 +421,26 @@ class Solver(object):
                 output= self.model(input)['queries']
             else:
                 output = torch.cat([output,self.model(input)['queries']], dim=0)
+        # for i, (input_data, labels) in enumerate(self.k_loader):
+
+        #     input = input_data.float().to(self.device)
+        #     if i==0:
+        #         output= self.model(input)['queries']
+        #     else:
+        #         output = torch.cat([output,self.model(input)['queries']], dim=0)
         
         self.memory_init_embedding = k_means_clustering(x=output, n_mem=self.n_memory, d_model=self.d_model)
 
         self.memory_initial = False
+
+        self.model.memory_init_embedding = self.memory_init_embedding
 
         self.build_model(memory_init_embedding = self.memory_init_embedding.detach())
 
         memory_item_embedding = self.train(training_type=training_type)
 
         memory_item_embedding = memory_item_embedding[:int(self.n_memory),:]
+        # memory_item_embedding = self.memory_init_embedding[:int(self.n_memory),:]
 
         item_folder_path = "memory_item"
         if not os.path.exists(item_folder_path):
