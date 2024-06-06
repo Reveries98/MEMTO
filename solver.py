@@ -14,7 +14,7 @@ import logging
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1
 
 def adjust_learning_rate(optimizer, epoch, lr_):
     lr_adjust = {epoch: lr_ * (0.5 ** ((epoch - 1) // 1))}
@@ -151,7 +151,7 @@ class Solver(object):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         if torch.cuda.is_available():
-            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1,2,3], output_device=0).to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1], output_device=0).to(self.device)
 
     def vali(self, vali_loader):
         self.model.eval()
