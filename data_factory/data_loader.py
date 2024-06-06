@@ -18,7 +18,7 @@ class SWaTSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = pd.read_csv(data_path + '/train.csv', header=1)
+        data = pd.read_csv(data_path + '/train.csv', header=0)
         data = data.values[:, :-1]
 
         data = np.nan_to_num(data)
