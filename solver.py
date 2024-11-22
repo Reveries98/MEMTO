@@ -13,6 +13,9 @@ from data_factory.data_loader import get_loader_segment
 import logging
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
+from utils.MemTracker import MemTracker
+import inspect
+
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
 
@@ -33,8 +36,8 @@ class TwoEarlyStopping:
         self.best_score = None
         self.best_score2 = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
-        self.val_loss2_min = np.Inf
+        self.val_loss_min = np.inf
+        self.val_loss2_min = np.inf
         self.delta = delta
         self.dataset = dataset_name
 
@@ -70,7 +73,7 @@ class OneEarlyStopping:
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
+        self.val_loss_min = np.inf
         self.delta = delta
         self.dataset = dataset_name
         self.type = type
@@ -97,14 +100,17 @@ class OneEarlyStopping:
         torch.save(model.state_dict(), os.path.join(path, str(self.dataset) + f'_checkpoint_{self.type}.pth'))
         self.val_loss_min = val_loss
 
-
+class Config:
+    def __init__(self, items):
+        for key, value in items.items():
+            setattr(self, key, value)
 class Solver(object):
     DEFAULTS = {}
 
     def __init__(self, config):
-
+        
         self.__dict__.update(Solver.DEFAULTS, **config)
-
+        self.configs = Config(config)
         self.train_loader, self.vali_loader, self.k_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                                mode='train',
                                                dataset=self.dataset)
@@ -145,13 +151,13 @@ class Solver(object):
 
     def build_model(self,memory_init_embedding):
         
-        self.model = TransformerVar(win_size=self.win_size, enc_in=self.input_c, c_out=self.output_c, \
+        self.model = TransformerVar(win_size=self.win_size, enc_in=self.input_c, c_out=self.output_c, configs=self.configs, \
                                     e_layers=3, d_model=self.d_model, n_memory=self.n_memory, device=self.device, \
                                     memory_initial=self.memory_initial, memory_init_embedding=memory_init_embedding, phase_type=self.phase_type, dataset_name=self.dataset)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         if torch.cuda.is_available():
-            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1], output_device=0).to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=[0], output_device=0).to(self.device)
 
     def vali(self, vali_loader):
         self.model.eval()
@@ -165,14 +171,14 @@ class Solver(object):
             
             rec_loss = self.criterion(output, input)
             entropy_loss = self.entropy_loss(attn)
-            loss = rec_loss + self.lambd*entropy_loss
+            loss = rec_loss + self.lambd * entropy_loss
 
             valid_re_loss_list.append(rec_loss.detach().cpu().numpy())
             valid_entropy_loss_list.append(entropy_loss.detach().cpu().numpy())
             valid_loss_list.append(loss.detach().cpu().numpy())
 
         return np.average(valid_loss_list), np.average(valid_re_loss_list), np.average(valid_entropy_loss_list)
-
+    
     def train(self, training_type):
 
         print("======================TRAIN MODE======================")
@@ -188,7 +194,8 @@ class Solver(object):
         for epoch in tqdm(range(self.num_epochs)):
             iter_count = 0
             loss_list = []
-            rec_loss_list = []; entropy_loss_list = []
+            rec_loss_list = [] 
+            entropy_loss_list = []
 
             epoch_time = time.time()
             self.model.train()
@@ -200,10 +207,10 @@ class Solver(object):
                 output_dict = self.model(input_data)
                 
                 output, memory_item_embedding, queries, mem_items, attn = output_dict['out'], output_dict['memory_item_embedding'], output_dict['queries'], output_dict["mem"], output_dict['attn']
-
+                # print(memory_item_embedding.shape)
                 rec_loss = self.criterion(output, input)
                 entropy_loss = self.entropy_loss(attn)
-                loss = rec_loss + self.lambd*entropy_loss
+                loss = rec_loss + self.lambd * entropy_loss
                 
                 loss_list.append(loss.detach().cpu().numpy())
                 entropy_loss_list.append(entropy_loss.detach().cpu().numpy())
@@ -227,6 +234,7 @@ class Solver(object):
             train_loss = np.average(loss_list)
             train_entropy_loss = np.average(entropy_loss_list)
             train_rec_loss = np.average(rec_loss_list)
+
             valid_loss , valid_re_loss_list, valid_entropy_loss_list = self.vali(self.vali_loader)
 
             print(
@@ -238,7 +246,7 @@ class Solver(object):
             print(
                 "Epoch: {0}, Steps: {1} | TRAIN reconstruction Loss: {3:.7f} Entropy loss Loss: {2:.7f}  ".format(
                     epoch + 1, train_steps, train_rec_loss, train_entropy_loss))
-
+            print("tel:",train_entropy_loss,"vel:",valid_entropy_loss_list,"vl:",valid_loss,"trl:",train_loss)
             early_stopping(valid_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -357,53 +365,69 @@ class Solver(object):
 
         #np.save(dist_path+'normal_dist_only_gl', normal_dist)
         #np.save(dist_path+'abnormal_dist_only_gl', abnormal_dist)
-
         pred = (test_energy > thresh).astype(int)
 
         gt = test_labels.astype(int)
 
         print("pred:   ", pred.shape)
         print("gt:     ", gt.shape)
+        if self.metrics == 'PA':
+            
+            anomaly_state = False
+            for i in range(len(gt)):
+                if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
+                    anomaly_state = True
+                    for j in range(i, 0, -1):
+                        if gt[j] == 0:
+                            break
+                        else:
+                            if pred[j] == 0:
+                                pred[j] = 1
+                    for j in range(i, len(gt)):
+                        if gt[j] == 0:
+                            break
+                        else: 
+                            if pred[j] == 0:
+                                pred[j] = 1
+                elif gt[i] == 0:
+                    anomaly_state = False
+                if anomaly_state:
+                    pred[i] = 1
 
-        anomaly_state = False
-        for i in range(len(gt)):
-            if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
-                anomaly_state = True
-                for j in range(i, 0, -1):
-                    if gt[j] == 0:
-                        break
-                    else:
-                        if pred[j] == 0:
-                            pred[j] = 1
-                for j in range(i, len(gt)):
-                    if gt[j] == 0:
-                        break
-                    else: 
-                        if pred[j] == 0:
-                            pred[j] = 1
-            elif gt[i] == 0:
-                anomaly_state = False
-            if anomaly_state:
-                pred[i] = 1
+            pred = np.array(pred)
+            gt = np.array(gt)
+            print("pred: ", pred.shape)
+            print("gt:   ", gt.shape)
+            
 
-        pred = np.array(pred)
-        gt = np.array(gt)
-        print("pred: ", pred.shape)
-        print("gt:   ", gt.shape)
-        
+            accuracy = accuracy_score(gt, pred)
+            precision, recall, f1_score, support = precision_recall_fscore_support(gt, pred,
+                    
+                                                                    average='binary')
+        elif self.metrics == "AF":
+            from utils.affiliation.generics import convert_vector_to_events
+            from utils.affiliation.metrics import pr_from_events
+            def getAffiliationMetrics(label, pred):
+                events_pred = convert_vector_to_events(pred)
+                events_label = convert_vector_to_events(label)
+                Trange = (0, len(pred))
 
-        accuracy = accuracy_score(gt, pred)
-        precision, recall, f_score, support = precision_recall_fscore_support(gt, pred,
-                                                                            average='binary')
-        print("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(accuracy, precision, recall, f_score))
+                result = pr_from_events(events_pred, events_label, Trange)
+                P = result['precision']
+                R = result['recall']
+                F = 2 * P * R / (P + R)
+
+                return P, R, F
+            precision, recall, f1_score = getAffiliationMetrics(gt.copy(), pred.copy())
+        print(" Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format( precision, recall, f1_score))
         print('='*50)
 
         self.logger.info(f"Dataset: {self.dataset}")
         self.logger.info(f"number of items: {self.n_memory}")
         self.logger.info(f"Precision: {round(precision,4)}")
         self.logger.info(f"Recall: {round(recall,4)}")
-        self.logger.info(f"f1_score: {round(f_score,4)} \n")
-        return accuracy, precision, recall, f_score
+        self.logger.info(f"f1_score: {round(f1_score,4)} \n")
+        # return  precision, recall, f1_score
 
     def get_memory_initial_embedding(self,training_type='second_train'):
 

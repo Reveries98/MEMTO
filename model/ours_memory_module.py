@@ -83,9 +83,8 @@ class MemoryModule(nn.Module):
         add_memory = torch.matmul(attn, self.mem.detach())    # T x C
 
         # add_memory = F.normalize(add_memory, dim=1)
-        read_query = torch.cat((query, add_memory), dim=1)  # T x 2C
-
-        return {'output': read_query, 'attn': attn}
+        query = torch.cat((query, add_memory), dim=1)  # T x 2C
+        return {'output': query, 'attn': attn}
 
     def update(self, query):
         '''
@@ -94,12 +93,13 @@ class MemoryModule(nn.Module):
         query (encoder output features) : (NxL) x C or N x C -> T x C
         '''
         self.mem = self.mem.cuda()
-        attn = self.get_attn_score(self.mem, query.detach())  # M x T
-        add_mem = torch.matmul(attn, query.detach())   # M x C
+        with torch.no_grad():
+            attn = self.get_attn_score(self.mem, query.detach())  # M x T
+            add_mem = torch.matmul(attn, query.detach())   # M x C
 
-        # update gate : M x C
-        update_gate = torch.sigmoid(self.U(self.mem) + self.W(add_mem)) # M x C
-        self.mem = (1 - update_gate)*self.mem + update_gate*add_mem
+            # update gate : M x C
+            update_gate = torch.sigmoid(self.U(self.mem) + self.W(add_mem)) # M x C
+            self.mem = (1 - update_gate)*self.mem + update_gate*add_mem
         # self.mem = F.noramlize(self.mem + add_mem, dim=1)   # M x C
 
     def forward(self, query):
@@ -120,6 +120,7 @@ class MemoryModule(nn.Module):
             self.update(query)
         
         # get new robust features, while memory items(cluster centers) being fixed
+        
         outs = self.read(query)
         
         read_query, attn = outs['output'], outs['attn']
