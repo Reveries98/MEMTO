@@ -1,5 +1,5 @@
 # SMD
-python main.py --anormly_ratio 0.5 \
+python main.py --anomaly_ratio 0.5 \
                 --num_epochs 200 \
                 --batch_size 256 \
                 --mode train \
@@ -22,7 +22,7 @@ python main.py --anormly_ratio 0.5 \
                 --head_dropout 0.0 \
                 --dropout 0.1 \
 
-python main.py --anormly_ratio 0.5 \
+python main.py --anomaly_ratio 0.5 \
                 --num_epochs 200  \
                 --batch_size 256  \
                 --mode memory_initial \
@@ -46,7 +46,7 @@ python main.py --anormly_ratio 0.5 \
                 --dropout 0.1 \
 
 # test
-python main.py --anormly_ratio 0.5 \
+python main.py --anomaly_ratio 0.5 \
                 --num_epochs 10  \
                 --batch_size 256 \
                 --mode test \

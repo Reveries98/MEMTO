@@ -1,5 +1,5 @@
 # # SMAP
-# python main.py --anormly_ratio 1.0 \
+# python main.py --anomaly_ratio 1.0 \
 #                 --num_epochs 200 \
 #                 --batch_size 256 \
 #                 --mode train \
@@ -24,7 +24,7 @@
 #                 --pred_len 0\
 #                 --backbone ModernTCN
 
-# python main.py --anormly_ratio 1.0 \
+# python main.py --anomaly_ratio 1.0 \
 #                 --num_epochs 200  \
 #                 --batch_size 256  \
 #                 --mode memory_initial \
@@ -50,7 +50,7 @@
 #                 --backbone ModernTCN
 
 # test
-python main.py --anormly_ratio 1.0 \
+python main.py --anomaly_ratio 1.0 \
                 --num_epochs 10 \
                 --batch_size 256  \
                 --mode test \

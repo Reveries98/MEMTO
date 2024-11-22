@@ -1,6 +1,6 @@
 # MSL
 
-python main.py --anormly_ratio 1.0\
+python main.py --anomaly_ratio 1.0\
                 --num_epochs 200 \
                 --batch_size 256 \
                 --mode train \
@@ -25,7 +25,7 @@ python main.py --anormly_ratio 1.0\
                 --pred_len 0\
                 --backbone ModernTCN
 
-python main.py --anormly_ratio 1.0\
+python main.py --anomaly_ratio 1.0\
                 --num_epochs 200  \
                 --batch_size 256  \
                 --mode memory_initial \
@@ -51,7 +51,7 @@ python main.py --anormly_ratio 1.0\
                 --backbone ModernTCN
 
 # test
-python main.py --anormly_ratio 1.0 \
+python main.py --anomaly_ratio 1.0 \
                 --num_epochs 10    \
                 --batch_size 256  \
                 --mode test \
