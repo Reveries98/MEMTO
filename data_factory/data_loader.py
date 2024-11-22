@@ -122,14 +122,14 @@ class MSLSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = np.load(data_path + "/train.npy")
+        data = np.load(data_path + "/MSL_train.npy")
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = np.load(data_path + "/test.npy")
+        test_data = np.load(data_path + "/MSL_test.npy")
         self.test = self.scaler.transform(test_data)
 
         self.train = data
-        self.test_labels = np.load(data_path + "/test_label.npy")
+        self.test_labels = np.load(data_path + "/MSL_test_label.npy")
         print("test:", self.test.shape)
         print("train:", self.train.shape)
 
@@ -158,14 +158,14 @@ class SMAPSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = np.load(data_path + "/train.npy")
+        data = np.load(data_path + "/SMAP_train.npy")
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = np.load(data_path + "/test.npy")
+        test_data = np.load(data_path + "/SMAP_test.npy")
         self.test = self.scaler.transform(test_data)
 
         self.train = data
-        self.test_labels = np.load(data_path + "/test_label.npy")
+        self.test_labels = np.load(data_path + "/SMAP_test_label.npy")
         print("test:", self.test.shape)
         print("train:", self.train.shape)
 
