@@ -4,8 +4,7 @@ import torch.nn.functional as F
 
 from model.layers.attn_layer import AttentionLayer
 from .embedding import TokenEmbedding, InputEmbedding
-from model.backbone.ModernTCN import Model
-from model.backbone.Transformer import EncoderLayer, Encoder
+from model.model.Transformer import EncoderLayer, Encoder
 # ours
 from .ours_memory_module import MemoryModule
 # memae
@@ -79,19 +78,16 @@ class TransformerVar(nn.Module):
         self.embedding = InputEmbedding(in_dim=enc_in, d_model=d_model, dropout=dropout, device=device)   # N x L x C(=d_model)
         self.backbone = backbone
         # Encoder
-        if self.backbone=='Transformer':
-            self.encoder = Encoder(
-                [
-                    EncoderLayer(
-                        AttentionLayer(
-                            win_size, d_model, n_heads, dropout=dropout
-                        ), d_model, d_ff, dropout=dropout, activation=activation
-                    ) for _ in range(e_layers)
-                ],
-                norm_layer = nn.LayerNorm(d_model)
-            )
-        elif self.backbone=='ModernTCN':
-            self.encoder = Model(configs=configs)
+        self.encoder = Encoder(
+            [
+                EncoderLayer(
+                    AttentionLayer(
+                        win_size, d_model, n_heads, dropout=dropout
+                    ), d_model, d_ff, dropout=dropout, activation=activation
+                ) for _ in range(e_layers)
+            ],
+            norm_layer = nn.LayerNorm(d_model)
+        )
 
         self.mem_module = MemoryModule(n_memory=n_memory, fea_dim=d_model, shrink_thres=shrink_thres, device=device, memory_init_embedding=memory_init_embedding, phase_type=phase_type, dataset_name=dataset_name)
         
