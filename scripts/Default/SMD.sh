@@ -7,7 +7,7 @@ python main.py --anomaly_ratio 0.5 \
                 --data_path /media/media02/mhzheng/dataset/SMD \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
+                --n_memory 5 \
                 --lambd 0.005 \
                 --lr 1e-4 \
                 --memory_initial False \
@@ -21,6 +21,7 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.0 \
                 --dropout 0.1 \
+                --backbone Transformer
 
 python main.py --anomaly_ratio 0.5 \
                 --num_epochs 200  \
@@ -30,7 +31,7 @@ python main.py --anomaly_ratio 0.5 \
                 --data_path /media/media02/mhzheng/dataset/SMD  \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
+                --n_memory 5 \
                 --lambd 0.05 \
                 --lr 5e-5 \
                 --memory_initial True \
@@ -44,17 +45,18 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.0 \
                 --dropout 0.1 \
+                --backbone Transformer
 
 # test
 python main.py --anomaly_ratio 0.5 \
-                --num_epochs 10  \
+                --num_epochs 20  \
                 --batch_size 256 \
                 --mode test \
                 --dataset SMD  \
                 --data_path /media/media02/mhzheng/dataset/SMD  \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
+                --n_memory 5 \
                 --memory_initial False \
                 --phase_type test\
                 --ffn_ratio 1 \
@@ -66,3 +68,4 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.0 \
                 --dropout 0.1 \
+                --backbone Transformer

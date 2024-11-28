@@ -37,7 +37,7 @@ class Encoder(nn.Module):
         '''
         x : N x L x C(=d_model)
         '''
-        for attn_layer in self.attn_layers:
+        for i,attn_layer in enumerate(self.attn_layers):
             x = attn_layer(x)
 
         if self.norm is not None:

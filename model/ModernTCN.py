@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 from model.RevIN import RevIN
 from model.layers.ModernTCN_Layer import series_decomp, Flatten_Head
+from .ours_memory_module import MemoryModule
 
 
 class LayerNorm(nn.Module):
@@ -204,17 +205,17 @@ class Stage(nn.Module):
 class ModernTCN(nn.Module):
     def __init__(self,patch_size,patch_stride, stem_ratio, downsample_ratio, ffn_ratio, num_blocks, large_size, small_size, dims, dw_dims,
                  nvars, small_kernel_merged=False, backbone_dropout=0.1, head_dropout=0.1, use_multi_scale=True, revin=True, affine=True,
-                 subtract_last=False, freq=None, seq_len=512, c_in=7, individual=False, target_window=96, class_drop=0.,class_num = 10):
+                 subtract_last=False, freq=None, seq_len=512, c_in=7, individual=False, target_window=96, class_drop=0.,class_num = 10,n_memory=10,phase_type=None,device=None,dataset_name=None,shrink_thres=0.05,memory_init_embedding=None,memory_initial = False):
 
         super(ModernTCN, self).__init__()
         self.class_drop = class_drop
         self.class_num = class_num
-
+        self.memory_initial  = memory_initial
         self.seq_len = seq_len
 
         # RevIN
         self.revin = revin
-        if self.revin: self.revin_layer = RevIN(c_in, affine=affine, subtract_last=subtract_last)
+        if self.revin: self.revin_layer = RevIN(c_in, affine=affine)
 
         # stem layer & down sampling layers
         self.downsample_layers = nn.ModuleList()
@@ -264,17 +265,18 @@ class ModernTCN(nn.Module):
             self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, target_window,
                                      head_dropout=head_dropout)
 
-            self.head_dection1 = nn.Linear(d_model, self.patch_size)
+        self.head_dection1 = nn.Linear(d_model, self.patch_size)
+        self.mem_module = MemoryModule(n_memory=n_memory, fea_dim=d_model*patch_num, shrink_thres=shrink_thres, device=device, memory_init_embedding=memory_init_embedding, phase_type=phase_type, dataset_name=dataset_name)
+        
+
 
     def forward_feature(self, x, te=None):
 
         B,M,L=x.shape
         x = x.unsqueeze(-2)
-
         for i in range(self.num_stage):
             B, M, D, N = x.shape
             x = x.reshape(B * M, D, N)
-
             if i==0:
                 if self.patch_size != self.patch_stride:
                     # stem layer padding
@@ -294,7 +296,6 @@ class ModernTCN(nn.Module):
                     x = self.downsample_layers[i](x)
                     _, D_, N_ = x.shape
                     x = x.reshape(B, M, D_, N_)
-
             x = self.stages[i](x)
         return x
 
@@ -307,6 +308,10 @@ class ModernTCN(nn.Module):
 
         x = self.forward_feature(x, te=None)
         x = x.permute(0, 1, 3, 2)
+        k_x = x.reshape(x.shape[0], x.shape[1], -1)
+        outputs = self.mem_module(k_x)
+        out, attn, memory_item_embedding = outputs['output'], outputs['attn'], outputs['memory_init_embedding']
+        mem = self.mem_module.mem
         x = self.head_dection1(x)
         B,M,_,_=x.shape
         x = x.reshape(B,M,-1)
@@ -315,12 +320,14 @@ class ModernTCN(nn.Module):
 
         if self.revin:
             x = self.revin_layer(x, 'denorm')
-        return x
+        if self.memory_initial:
+            return {"out":out, "memory_item_embedding":None, "queries":k_x, "mem":mem}
+        else:
+            return {"out":x, "memory_item_embedding":memory_item_embedding, "queries":k_x, "mem":mem, "attn":attn}
 
     def forward(self, x, te=None):
 
-        if self.task_name == 'anomaly_detection':
-            x = self.detection(x)
+        x = self.detection(x)
         return x
 
     def structural_reparam(self):
@@ -330,9 +337,11 @@ class ModernTCN(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, configs):
+    def __init__(self, configs, memory_initial = False ,memory_init_embedding=None,phase_type=None,dataset_name=None,shrink_thres=0.05):
         super(Model, self).__init__()
         # hyper param
+        self.n_memory = configs.n_memory
+        self.device = configs.device
 
         self.stem_ratio = configs.stem_ratio
         self.downsample_ratio = configs.downsample_ratio
@@ -374,9 +383,10 @@ class Model(nn.Module):
                            backbone_dropout=self.drop_backbone, head_dropout=self.drop_head,
                            use_multi_scale=self.use_multi_scale, revin=self.revin, affine=self.affine,
                            subtract_last=self.subtract_last, freq=self.freq, seq_len=self.seq_len, c_in=self.c_in,
-                           individual=self.individual, target_window=self.target_window)
+                           individual=self.individual, target_window=self.target_window,n_memory=self.n_memory, memory_initial = memory_initial,
+                           shrink_thres=shrink_thres,memory_init_embedding=memory_init_embedding,phase_type=phase_type,dataset_name=dataset_name)
 
-    def forward(self, x, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, x, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None):
 
         x = x.permute(0, 2, 1)
         te = None

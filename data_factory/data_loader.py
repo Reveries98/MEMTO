@@ -13,7 +13,8 @@ import pickle
 
 
 class SWaTSegLoader(Dataset):
-    def __init__(self, data_path, win_size, step, mode="train"):
+    def __init__(self, data_path, win_size, step, mode="train",backbone="Transformer"):
+        self.backbone = backbone
         self.mode = mode
         self.step = step
         self.win_size = win_size
@@ -45,19 +46,27 @@ class SWaTSegLoader(Dataset):
         print("train:", self.train.shape)
 
     def __len__(self):
-        """
-        Number of images in the object dataset.
-        mode : "train" or "test"
-        """
-        if self.mode == "train":
-            return (self.train.shape[0] - self.win_size) // self.step + 1
-        elif (self.mode == 'test'):
-            return (self.test.shape[0] - self.win_size) // self.step + 1
+        if self.backbone == "Transformer":
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) // self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) // self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) // self.step + 1
         else:
-            return (self.train.shape[0] - self.win_size) // self.step + 1
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) +1 #// self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+
 
     def __getitem__(self, index):
-        index = index * self.step
+        if self.backbone == "Transformer":
+            index = index * self.step
+        else:
+            index = index #* self.step
         if self.mode == "train":
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
         elif (self.mode == 'test'):
@@ -68,7 +77,8 @@ class SWaTSegLoader(Dataset):
 
 
 class PSMSegLoader(Dataset):
-    def __init__(self, data_path, win_size, step, mode="train"):
+    def __init__(self, data_path, win_size, step, mode="train",backbone="Transformer"):
+        self.backbone = backbone
         self.mode = mode
         self.step = step
         self.win_size = win_size
@@ -95,19 +105,27 @@ class PSMSegLoader(Dataset):
         print("train:", self.train.shape)
 
     def __len__(self):
-        """
-        Number of images in the object dataset.
-        mode : "train" or "test"
-        """
-        if self.mode == "train":
-            return (self.train.shape[0] - self.win_size) // self.step + 1
-        elif (self.mode == 'test'):
-            return (self.test.shape[0] - self.win_size) // self.step + 1
+        if self.backbone == "Transformer":
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) // self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) // self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) // self.step + 1
         else:
-            return (self.train.shape[0] - self.win_size) // self.step + 1
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) +1 #// self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+
 
     def __getitem__(self, index):
-        index = index * self.step
+        if self.backbone == "Transformer":
+            index = index * self.step
+        else:
+            index = index #* self.step
         if self.mode == "train":
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
         elif (self.mode == 'test'):
@@ -117,7 +135,8 @@ class PSMSegLoader(Dataset):
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
 
 class MSLSegLoader(Dataset):
-    def __init__(self, data_path, win_size, step, mode="train"):
+    def __init__(self, data_path, win_size, step, mode="train",backbone="Transformer"):
+        self.backbone = backbone
         self.mode = mode
         self.step = step
         self.win_size = win_size
@@ -134,16 +153,27 @@ class MSLSegLoader(Dataset):
         print("train:", self.train.shape)
 
     def __len__(self):
-
-        if self.mode == "train":
-            return (self.train.shape[0] - self.win_size) // self.step + 1
-        elif (self.mode == 'test'):
-            return (self.test.shape[0] - self.win_size) // self.step + 1
+        if self.backbone == "Transformer":
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) // self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) // self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) // self.step + 1
         else:
-            return (self.train.shape[0] - self.win_size) // self.step + 1
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) +1 #// self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+
 
     def __getitem__(self, index):
-        index = index * self.step
+        if self.backbone == "Transformer":
+            index = index * self.step
+        else:
+            index = index #* self.step
         if self.mode == "train":
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
         elif (self.mode == 'test'):
@@ -153,7 +183,8 @@ class MSLSegLoader(Dataset):
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
 
 class SMAPSegLoader(Dataset):
-    def __init__(self, data_path, win_size, step, mode="train"):
+    def __init__(self, data_path, win_size, step, mode="train", backbone="Transformer"):
+        self.backbone = backbone
         self.mode = mode
         self.step = step
         self.win_size = win_size
@@ -170,16 +201,27 @@ class SMAPSegLoader(Dataset):
         print("train:", self.train.shape)
 
     def __len__(self):
-
-        if self.mode == "train":
-            return (self.train.shape[0] - self.win_size) // self.step + 1
-        elif (self.mode == 'test'):
-            return (self.test.shape[0] - self.win_size) // self.step + 1
+        if self.backbone == "Transformer":
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) // self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) // self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) // self.step + 1
         else:
-            return (self.train.shape[0] - self.win_size) // self.step + 1
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) +1 #// self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+
 
     def __getitem__(self, index):
-        index = index * self.step
+        if self.backbone == "Transformer":
+            index = index * self.step
+        else:
+            index = index #* self.step
         if self.mode == "train":
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
         elif (self.mode == 'test'):
@@ -189,7 +231,8 @@ class SMAPSegLoader(Dataset):
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
 
 class SMDSegLoader(Dataset):
-    def __init__(self, data_path, win_size, step, mode="train"):
+    def __init__(self, data_path, win_size, step, mode="train",backbone="Transformer"):
+        self.backbone = backbone
         self.mode = mode
         self.step = step
         self.win_size = win_size
@@ -206,16 +249,27 @@ class SMDSegLoader(Dataset):
         print("train:", self.train.shape)
         
     def __len__(self):
-
-        if self.mode == "train":
-            return (self.train.shape[0] - self.win_size) // self.step + 1
-        elif (self.mode == 'test'):
-            return (self.test.shape[0] - self.win_size) // self.step + 1
+        if self.backbone == "Transformer":
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) // self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) // self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) // self.step + 1
         else:
-            return (self.train.shape[0] - self.win_size) // self.step + 1
+            if self.mode == "train":
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+            elif (self.mode == 'test'):
+                return (self.test.shape[0] - self.win_size) +1 #// self.step + 1
+            else:
+                return (self.train.shape[0] - self.win_size) +1 #// self.step + 1
+
 
     def __getitem__(self, index):
-        index = index * self.step
+        if self.backbone == "Transformer":
+            index = index * self.step
+        else:
+            index = index #* self.step
         if self.mode == "train":
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
         elif (self.mode == 'test'):
@@ -225,20 +279,20 @@ class SMDSegLoader(Dataset):
             return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
 
 
-def get_loader_segment(data_path, batch_size, win_size=100, step=100, mode='train', dataset='KDD', val_ratio=0.2):
+def get_loader_segment(data_path, batch_size, win_size=100, step=100, mode='train', dataset='KDD', val_ratio=0.2, backbone="Transformer"):
     '''
     model : 'train' or 'test'
     '''
     if (dataset == 'SMD'):
-        dataset = SMDSegLoader(data_path, win_size, step, mode)
+        dataset = SMDSegLoader(data_path, win_size, step, mode, backbone)
     elif (dataset == 'MSL'):
-        dataset = MSLSegLoader(data_path, win_size, step, mode)
+        dataset = MSLSegLoader(data_path, win_size, step, mode, backbone)
     elif (dataset == 'SMAP'):
-        dataset = SMAPSegLoader(data_path, win_size, step, mode)
+        dataset = SMAPSegLoader(data_path, win_size, step, mode, backbone)
     elif (dataset == 'PSM'):
-        dataset = PSMSegLoader(data_path, win_size, step, mode)
+        dataset = PSMSegLoader(data_path, win_size, step, mode, backbone)
     elif (dataset == 'SWaT'):
-        dataset = SWaTSegLoader(data_path, win_size, step, mode)
+        dataset = SWaTSegLoader(data_path, win_size, step, mode, backbone)
 
     shuffle = False
     if mode == 'train':

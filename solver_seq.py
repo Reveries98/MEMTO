@@ -8,6 +8,7 @@ import os
 import time
 from utils.utils import *
 from model.Transformer import TransformerVar
+from model.ModernTCN import Model
 from model.loss_functions import *
 from data_factory.data_loader import get_loader_segment
 import logging
@@ -15,6 +16,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
 from utils.MemTracker import MemTracker
 import inspect
+import math
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
@@ -113,11 +115,11 @@ class Solver(object):
         self.configs = Config(config)
         self.train_loader, self.vali_loader, self.k_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                                mode='train',
-                                               dataset=self.dataset, backbone=self.backbone)
+                                               dataset=self.dataset,backbone=self.backbone)
 
         self.test_loader, _ = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                               mode='test',
-                                              dataset=self.dataset, backbone=self.backbone)
+                                              dataset=self.dataset,backbone=self.backbone)
         self.thre_loader = self.vali_loader
         
         if self.memory_initial == "False":
@@ -140,19 +142,22 @@ class Solver(object):
 
         self.logger = logging.getLogger()
         self.logger.setLevel(logging.INFO)
+    
 
         formatter = logging.Formatter('%(asctime)s - %(message)s')
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         self.logger.addHandler(stream_handler)
-        # file_handler = logging.FileHandler(f'./hyperparameters_tuning/memory_item_numbers/number_{self.dataset}.log')
-        # file_handler.setFormatter(formatter)
-        # self.logger.addHandler(file_handler)
+        file_handler = logging.FileHandler(f'./number_{self.dataset}.log')
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
 
     def build_model(self,memory_init_embedding):
-        
-        self.model = TransformerVar(win_size=self.win_size, enc_in=self.input_c, c_out=self.output_c, configs=self.configs, \
-                                    e_layers=3, d_model=self.d_model, n_memory=self.n_memory, device=self.device, \
+        if "TCN" in self.backbone:
+            self.model = Model( configs=self.configs, memory_initial=self.memory_initial, memory_init_embedding=memory_init_embedding, phase_type=self.phase_type, dataset_name=self.dataset)
+        else:
+            self.model = TransformerVar(win_size=self.win_size, enc_in=self.input_c, c_out=self.output_c, configs=self.configs, \
+                                    e_layers=3, d_model=self.d_model, n_memory=self.n_memory, device=self.device, backbone=self.backbone,\
                                     memory_initial=self.memory_initial, memory_init_embedding=memory_init_embedding, phase_type=self.phase_type, dataset_name=self.dataset)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
@@ -187,7 +192,7 @@ class Solver(object):
         path = self.model_save_path
         if not os.path.exists(path):
             os.makedirs(path)
-        early_stopping = OneEarlyStopping(patience=10, verbose=True, dataset_name=self.dataset, type=training_type)
+        early_stopping = OneEarlyStopping(patience=3, verbose=True, dataset_name=self.dataset, type=training_type)
         train_steps = len(self.train_loader)
 
         from tqdm import tqdm
@@ -262,7 +267,6 @@ class Solver(object):
         
         print("======================TEST MODE======================")
 
-        criterion = nn.MSELoss(reduce=False)
         gathering_loss = GatheringLoss(reduce=False)
         temperature = self.temperature
 
@@ -272,9 +276,10 @@ class Solver(object):
             output_dict = self.model(input_data)
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
-            rec_loss = torch.mean(criterion(input,output),dim=-1)
+            rec_loss = torch.mean(abs(input-output),dim=-1)
             latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
-            loss = latent_score * rec_loss
+            # loss = latent_score * rec_loss
+            loss = rec_loss
 
             cri = loss.detach().cpu().numpy()
             train_attens_energy.append(cri)
@@ -288,9 +293,10 @@ class Solver(object):
             output_dict = self.model(input)
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
-            rec_loss = torch.mean(criterion(input,output),dim=-1)
+            rec_loss = torch.mean(abs(input-output),dim=-1)
             latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
-            loss = latent_score * rec_loss
+            # loss = latent_score * rec_loss
+            loss = rec_loss
 
             cri = loss.detach().cpu().numpy()
             valid_attens_energy.append(cri)
@@ -299,10 +305,11 @@ class Solver(object):
         valid_energy = np.array(valid_attens_energy)
 
         combined_energy = np.concatenate([train_energy, valid_energy], axis=0)
-
+        
         thresh = np.percentile(combined_energy, 100 - self.anomaly_ratio)
         print("Threshold :", thresh)
-
+        # init_thresh = np.median(combined_energy)+10*(np.percentile(combined_energy, 75) - np.percentile(combined_energy, 25))
+        init_thresh = np.mean(combined_energy)+3*np.std(combined_energy)
 
         distance_with_q = []
         reconstructed_output = []
@@ -310,29 +317,51 @@ class Solver(object):
         rec_loss_list = []
 
         test_labels = []
-        test_attens_energy = []
+        test_attens_energy = np.array([])
+        score_threshs = []
+        cache_threshs = []
         for i, (input_data, labels) in enumerate(self.test_loader):
             input = input_data.float().to(self.device)
             output_dict= self.model(input)
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
-            rec_loss = torch.mean(criterion(input,output),dim=-1)
-            latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
-            loss = latent_score * rec_loss
-
+            rec_loss = torch.mean(abs(input-output),dim=-1)
+            # latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
+            # loss = latent_score * rec_loss
+            loss = rec_loss
             cri = loss.detach().cpu().numpy()
-            test_attens_energy.append(cri)
-            test_labels.append(labels)
+            test_attens_energy = np.append(test_attens_energy, cri[:,-1])###
+            # print(test_attens_energy.shape)
+            # score = np.array(test_attens_energy[-self.score_window:])
+            # cache = np.array(test_attens_energy[-self.cache_window:])
+            # score_thresh = np.median(score)+4*(np.percentile(score, 75) - np.percentile(score, 25))
+            # cache_thresh = np.median(cache)+4*(np.percentile(cache, 75) - np.percentile(cache, 25))
+            # score_threshs.append(score_thresh)
+            # cache_threshs.append(cache_thresh)
+            test_labels.append(labels[:,-1])
 
-            d_q = gathering_loss(queries, mem_items)*rec_loss
-            distance_with_q.append(d_q.detach().cpu().numpy())
-            distance_with_q.append(gathering_loss(queries, mem_items).detach().cpu().numpy())
+            # d_q = gathering_loss(queries, mem_items)*rec_loss
+            # distance_with_q.append(d_q.detach().cpu().numpy())
+            # distance_with_q.append(gathering_loss(queries, mem_items).detach().cpu().numpy())
 
-            reconstructed_output.append(output.detach().cpu().numpy())
-            original_output.append(input.detach().cpu().numpy())
+            reconstructed_output.append(output[:,-1:,:].detach().cpu().numpy())
+            original_output.append(input[:,-1:,:].detach().cpu().numpy())
             rec_loss_list.append(rec_loss.detach().cpu().numpy())
-
-        test_attens_energy = np.concatenate(test_attens_energy, axis=0).reshape(-1)
+        # thresh = np.zeros(len(test_attens_energy))
+        # for i in range(len(test_attens_energy)):
+        #     if i < self.score_window:
+        #         thresh[i] = init_thresh
+        #         continue
+        #     # score_thresh = np.median(test_attens_energy[i-self.score_window:i])+10*(np.percentile(test_attens_energy[i-self.score_window:i], 75) - np.percentile(test_attens_energy[i-self.score_window:i], 25))
+        #     score_thresh = np.mean(test_attens_energy[i-self.score_window:i])+3*np.std(test_attens_energy[i-self.score_window:i])
+        #     if i < self.cache_window:
+        #         thresh[i] = score_thresh if score_thresh > init_thresh else init_thresh
+        #     else:
+        #         # cache_thresh = np.median(test_attens_energy[i-self.cache_window:i])+10*(np.percentile(test_attens_energy[i-self.cache_window:i], 75) - np.percentile(test_attens_energy[i-self.cache_window:i], 25))
+        #         cache_thresh = np.mean(test_attens_energy[i-self.cache_window:i])+3*np.std(test_attens_energy[i-self.cache_window:i])
+        #         thresh[i] = score_thresh if score_thresh > cache_thresh else cache_thresh
+        # thresh = np.array(thresh)
+        # test_attens_energy = np.concatenate(test_attens_energy, axis=0).reshape(-1)
         test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
         test_energy = np.array(test_attens_energy)
         test_labels = np.array(test_labels)
@@ -349,15 +378,15 @@ class Solver(object):
         #np.save(reconstruct_path+'gt_labels',test_labels)
         #np.save(reconstruct_path+'anomaly_score_only_gathering_loss',test_energy)
         
-        distance_with_q = np.concatenate(distance_with_q,axis=0).reshape(-1)
+        # distance_with_q = np.concatenate(distance_with_q,axis=0).reshape(-1)
 
-        normal_dist = []
-        abnormal_dist = []
-        for i,l in enumerate(test_labels):
-            if l == 0:
-                normal_dist.append(distance_with_q[i])
-            else:
-                abnormal_dist.append(distance_with_q[i])
+        # normal_dist = []
+        # abnormal_dist = []
+        # for i,l in enumerate(test_labels):
+        #     if l == 0:
+        #         normal_dist.append(distance_with_q[i])
+        #     else:
+        #         abnormal_dist.append(distance_with_q[i])
 
         #dist_path = f"./hyperparameters_tuning/norm_abnorm_distribtuion/{self.dataset}_"
         #normal_dist = np.array(normal_dist)
@@ -365,6 +394,7 @@ class Solver(object):
 
         #np.save(dist_path+'normal_dist_only_gl', normal_dist)
         #np.save(dist_path+'abnormal_dist_only_gl', abnormal_dist)
+        print(test_energy.shape)
         pred = (test_energy > thresh).astype(int)
 
         gt = test_labels.astype(int)
@@ -385,9 +415,12 @@ class Solver(object):
             pred = np.where(pred == 1)
             axs[1].scatter(pred[0],orgin[pred[0]],c='r')
             axs[2].plot(range(len(energy)),energy)
-            temp = np.zeros_like(energy)
-            temp[:] = thresh
-            axs[2].plot(range(len(energy)),temp)
+            try:
+                axs[2].plot(range(len(thresh)),thresh)
+            except:
+                temp = np.zeros_like(energy)
+                temp[:] = thresh
+                axs[2].plot(range(len(energy)),temp)
             axs[3].plot(range(len(orgin)),orgin)
             axs[3].plot(range(len(recons)),recons)
             plt.tight_layout()
@@ -399,7 +432,6 @@ class Solver(object):
         print("pred:   ", pred.shape)
         print("gt:     ", gt.shape)
         if self.metrics == 'PA':
-            
             anomaly_state = False
             for i in range(len(gt)):
                 if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
@@ -462,16 +494,19 @@ class Solver(object):
             torch.load(
                 os.path.join(str(self.model_save_path), str(self.dataset) + '_checkpoint_first_train.pth')))
         self.model.eval()
-        
+        import sys
+        k_output = []
         for i, (input_data, labels) in enumerate(self.k_loader):
-
+            
             input = input_data.float().to(self.device)
-            if i==0:
-                output= self.model(input)['queries']
-            else:
-                output = torch.cat([output,self.model(input)['queries']], dim=0)
-        
-        self.memory_init_embedding = k_means_clustering(x=output, n_mem=self.n_memory, d_model=self.d_model)
+            with torch.no_grad():
+                if i==0:
+                    output= self.model(input)['queries']
+                    output = torch.cat([output[0],output[1:,-1,:]],dim=0)
+                else:
+                    out = self.model(input)['queries']
+                    output = torch.cat((output,out[:,-1,:]),dim=0)
+        self.memory_init_embedding = k_means_clustering(x=output, n_mem=self.n_memory, d_model=self.dims[-1]*(self.win_size//self.patch_stride))
 
         self.memory_initial = False
 

@@ -7,6 +7,7 @@ from utils.utils import *
 
 # ours
 from solver import Solver
+from solver_seq import Solver as ss
 
 # other MMs
 # from other_solver import Solver
@@ -20,7 +21,10 @@ def main(config):
     cudnn.benchmark = True
     if (not os.path.exists(config.model_save_path)):
         mkdir(config.model_save_path)
-    solver = Solver(vars(config))
+    if config.backbone == 'Transformer':
+        solver = Solver(vars(config))
+    else:
+        solver = ss(vars(config))
 
     if config.mode == 'train':
         solver.train(training_type='first_train')
@@ -53,15 +57,18 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--n_memory', type=int, default=128, help='number of memory items')
     parser.add_argument('--num_workers', type=int, default=4*torch.cuda.device_count())
-    parser.add_argument('--d_model', type=int, default=512)
+    parser.add_argument('--d_model', type=int, default=128)
     parser.add_argument('--temperature', type=int, default=0.1)
     parser.add_argument('--memory_initial',type=str, default=False, help='whether it requires memory item embeddings. False: using random initialization, True: using customized intialization')
     parser.add_argument('--phase_type',type=str, default=None, help='whether it requires memory item embeddings. False: using random initialization, True: using customized intialization')
     parser.add_argument('--metrics',type=str,default='AF',help='how to measure the anomaly detection method')
-    parser.add_argument('--backbone',type=str,default='Transformer',help='which backbone to use')
+    parser.add_argument('--backbone',type=str,default='ModernTCN',help='which backbone to use')
+    parser.add_argument('--cache_window', type=int, default=14400)
+    parser.add_argument('--score_window', type=int, default=30)
     
     ###ModernTCN
     parser.add_argument('--pred_len', type=int, default=96, help='prediction sequence length')
+    parser.add_argument('--freq', type=str, default='m', help='time unit')
 
     parser.add_argument('--stem_ratio', type=int, default=6, help='stem ratio')
     parser.add_argument('--downsample_ratio', type=int, default=2, help='downsample_ratio')

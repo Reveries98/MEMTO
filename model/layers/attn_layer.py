@@ -25,8 +25,8 @@ class Attention(nn.Module):
 
         scale = self.scale if self.scale is not None else 1. / sqrt(C)
 
-        attn_scores = torch.einsum('nlhd,nshd->nhls', queries, keys)    # N x Head x L x L
-        attn_weights = self.dropout(torch.softmax(scale * attn_scores, dim=-1))
+        queries = torch.einsum('nlhd,nshd->nhls', queries, keys)    # N x Head x L x L
+        attn_weights = self.dropout(torch.softmax(scale * queries, dim=-1))
 
         updated_values = torch.einsum('nhls,nshd->nlhd', attn_weights, values)  # N x L x Head x d
 
@@ -61,7 +61,6 @@ class AttentionLayer(nn.Module):
         Q = self.W_Q(input).contiguous().view(N, L, self.n_heads, -1)
         K = self.W_K(input).contiguous().view(N, L, self.n_heads, -1)
         V = self.W_V(input).contiguous().view(N, L, self.n_heads, -1)
-
         updated_V = self.attn(Q, K, V)  # N x L x Head x d_values
         out = updated_V.view(N, L, -1)
 
