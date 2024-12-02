@@ -237,10 +237,10 @@ class SMDSegLoader(Dataset):
         self.step = step
         self.win_size = win_size
         self.scaler = StandardScaler()
-        data = np.load(data_path + "/SMD_train.npy")
+        data = np.load(data_path + "/SMD_train_data.npy")
         self.scaler.fit(data)
         data = self.scaler.transform(data)
-        test_data = np.load(data_path + "/SMD_test.npy")
+        test_data = np.load(data_path + "/SMD_test_data.npy")
         self.test = self.scaler.transform(test_data)
         self.train = data
         data_len = len(self.train)

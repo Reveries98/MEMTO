@@ -264,8 +264,9 @@ class ModernTCN(nn.Module):
 
             self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, target_window,
                                      head_dropout=head_dropout)
-
+        self.head_moe = nn.Linear(d_model*patch_num, 2)
         self.head_dection1 = nn.Linear(d_model, self.patch_size)
+        self.head_dropout = nn.Dropout(head_dropout)
         self.mem_module = MemoryModule(n_memory=n_memory, fea_dim=d_model*patch_num, shrink_thres=shrink_thres, device=device, memory_init_embedding=memory_init_embedding, phase_type=phase_type, dataset_name=dataset_name)
         
 
@@ -287,8 +288,6 @@ class ModernTCN(nn.Module):
                 x = x.unfold(dimension=-1, size=self.patch_size, step=self.patch_stride)
                 x = self.downsample_layers[i](x)
                 x = x.permute(0,1,3,2)
-
-
             else:
                 if N % self.downsample_ratio != 0:
                     pad_len = self.downsample_ratio - (N % self.downsample_ratio)
@@ -308,11 +307,17 @@ class ModernTCN(nn.Module):
 
         x = self.forward_feature(x, te=None)
         x = x.permute(0, 1, 3, 2)
-        k_x = x.reshape(x.shape[0], x.shape[1], -1)
+        b, v, n ,l = x.shape
+        k_x = x.reshape(b, v, -1)
         outputs = self.mem_module(k_x)
         out, attn, memory_item_embedding = outputs['output'], outputs['attn'], outputs['memory_init_embedding']
         mem = self.mem_module.mem
-        x = self.head_dection1(x)
+        out = out.reshape(b, v, 2, n, l)[:,:,0,:,:]
+        # out = self.head_dropout(out)
+        # print(out.shape, x.shape)
+        # exit()
+        # x = self.head_dropout(self.head_dection1(torch.mul(out,x)))
+        x = self.head_dropout(self.head_dection1(out,x))
         B,M,_,_=x.shape
         x = x.reshape(B,M,-1)
         x = x[:,:,:self.seq_len]
