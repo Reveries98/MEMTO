@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
-from kmeans_pytorch import kmeans
+from .KMeans import kmeans
 import time
 
 def to_var(x, volatile=False):
@@ -22,9 +22,14 @@ def k_means_clustering(x,n_mem,d_model):
 
     x = x.view([-1,d_model])
     print('running K Means Clustering. It takes few minutes to find clusters')
+    from sklearn.cluster import KMeans
     # sckit-learn xxxx (cuda problem)
-    _, cluster_centers = kmeans(X=x, num_clusters=n_mem, distance='euclidean', device=torch.device('cuda:0'))
+    kmeans_sklearn = KMeans(n_clusters=n_mem, init='k-means++',n_init=10)
+    temp = x.detach().cpu().numpy()
+    kmeans_sklearn.fit(temp)
+    initial_centroids = torch.tensor(kmeans_sklearn.cluster_centers_)
+    # _, cluster_centers = kmeans(X=x, num_clusters=n_mem,  distance='euclidean', device=torch.device('cuda:0'))
     print("time for conducting Kmeans Clustering :", time.time() - start)
     print('K means clustering is done!!!')
 
-    return cluster_centers
+    return initial_centroids

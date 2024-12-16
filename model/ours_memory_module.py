@@ -39,7 +39,9 @@ class MemoryModule(nn.Module):
                 # first train
                 print('loading memory item with random initilzation (for first train phase)')
 
-                self.mem = F.normalize(torch.rand((self.n_memory, self.fea_dim), dtype=torch.float), dim=1)
+                # self.mem = F.normalize(torch.rand((self.n_memory, self.fea_dim), dtype=torch.float), dim=1)
+                self.mem = torch.rand((self.n_memory, self.fea_dim), dtype=torch.float)
+                self.mem = F.normalize(nn.init.xavier_normal_(self.mem))
         else:
             # second train 
             if self.phase_type == 'second_train':
@@ -56,7 +58,7 @@ class MemoryModule(nn.Module):
         
         return output
     
-    def get_attn_score(self, query, key):
+    def get_attn_score(self, query, key, update_flag = False):
         '''
         Calculating attention score with sparsity regularization
         query (initial features) : (NxL) x C or N x C -> T x C
@@ -64,8 +66,8 @@ class MemoryModule(nn.Module):
         '''
         attn = torch.matmul(query, torch.t(key.cuda()))    # (TxC) x (CxM) -> TxM
         attn = F.softmax(attn, dim=-1)
-
         if (self.shrink_thres > 0):
+            # if not update_flag:
             attn = self.hard_shrink_relu(attn, self.shrink_thres)
             # re-normalize
             attn = F.normalize(attn, p=1, dim=1)
@@ -86,7 +88,7 @@ class MemoryModule(nn.Module):
         query = torch.cat((query, add_memory), dim=1)  # T x 2C
         return {'output': query, 'attn': attn}
 
-    def update(self, query):
+    def update(self, query, update_flag):
         '''
         Update memory items(cluster centers)
         Fix Encoder parameters (detach)
@@ -94,15 +96,40 @@ class MemoryModule(nn.Module):
         '''
         self.mem = self.mem.cuda()
         with torch.no_grad():
-            attn = self.get_attn_score(self.mem, query.detach())  # M x T
-            add_mem = torch.matmul(attn, query.detach())   # M x C
+            self.mem = self.mem.to(query.device)
+    
+            # Step 1: 计算注意力分数 attn
+            # 使用 query 和 memory 的点积作为初步注意力分数
+            attn = torch.matmul(query.detach(), self.mem.detach().T)  # T x M
+            attn = torch.softmax(attn, dim=-1)  # 确保分布为概率分布
 
-            # update gate : M x C
-            update_gate = torch.sigmoid(self.U(self.mem) + self.W(add_mem)) # M x C
-            self.mem = (1 - update_gate)*self.mem + update_gate*add_mem
-        # self.mem = F.noramlize(self.mem + add_mem, dim=1)   # M x C
+            # 避免数值过小或为零，加一个小常数 epsilon
+            epsilon = 1e-8
+            attn = torch.clamp(attn, min=epsilon)
 
-    def forward(self, query):
+
+            # Step 2: 计算记忆更新向量 add_mem
+            add_mem = torch.matmul(attn.T, query.detach())  # M x C
+
+            update_gate = torch.sigmoid(self.U(self.mem) + self.W(add_mem))
+        # with torch.no_grad():
+            # Step 4: 使用门控机制更新 memory
+            # 动量项用于防止记忆单元过快更新，同时增加稳定性
+            momentum = 0.9
+            # if update_flag:
+            #     momentum += 0.09 ##在线时memory缓慢更新
+            self.mem = momentum * self.mem + (1 - momentum) * (
+                (1 - update_gate) * self.mem + update_gate * add_mem
+            )
+
+            # Step 5: 可选的归一化
+            # 归一化确保 memory 的值不会发散
+            self.mem = F.normalize(self.mem, dim=1)
+
+
+
+
+    def forward(self, query, update_flag):
         '''
         query (encoder output features) : N x L x C or N x C
         '''
@@ -116,8 +143,8 @@ class MemoryModule(nn.Module):
         # query = F.normalize(query, dim=1)
         
         # update memory items(cluster centers), while encoder parameters being fixed
-        if self.phase_type != 'test':
-            self.update(query)
+        if self.phase_type != 'test' or update_flag:
+            self.update(query, update_flag)
         
         # get new robust features, while memory items(cluster centers) being fixed
         

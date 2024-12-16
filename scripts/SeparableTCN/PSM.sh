@@ -1,17 +1,17 @@
-# SMD\
-python main.py --anomaly_ratio 0.5 \
-                --num_epochs 20  \
-                --batch_size 512  \
+# PSM
+python main.py --anomaly_ratio 1.0 \
+                --num_epochs 20 \
+                --batch_size 512 \
                 --mode train \
-                --dataset SMD  \
-                --data_path /media/media02/mhzheng/dataset/SMD  \
-                --input_c 38 \
-                --output_c 38 \
-                --n_memory 10 \
-                --lambd 0 \
+                --dataset PSM \
+                --data_path /media/media02/mhzheng/dataset/PSM \
+                --input_c 25 \
+                --output_c 25 \
+                --n_memory 25 \
+                --lambd 0.005 \
                 --lr 5e-4 \
                 --memory_initial False \
-                --phase_type Nonr\
+                --phase_type None \
                 --ffn_ratio 1 \
                 --patch_size 8 \
                 --patch_stride 4 \
@@ -21,20 +21,21 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --backbone SeparableTCN \
 
-python main.py --anomaly_ratio 0.5 \
+python main.py --anomaly_ratio 1.0 \
                 --num_epochs 20  \
                 --batch_size 512  \
                 --mode memory_initial \
-                --dataset SMD  \
-                --data_path /media/media02/mhzheng/dataset/SMD  \
-                --input_c 38 \
-                --output_c 38 \
-                --n_memory 10 \
+                --dataset PSM  \
+                --data_path /media/media02/mhzheng/dataset/PSM  \
+                --input_c 25 \
+                --output_c 25 \
+                --n_memory 25 \
                 --lambd 0.1 \
                 --lr 1e-4 \
                 --memory_initial True \
-                --phase_type second_train\
+                --phase_type second_train \
                 --ffn_ratio 1 \
                 --patch_size 8 \
                 --patch_stride 4 \
@@ -44,20 +45,21 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --backbone SeparableTCN \
 
 # test
-python main.py --anomaly_ratio 0.5 \
-                --num_epochs 20  \
-                --batch_size 512 \
+python main.py --anomaly_ratio 1.0 \
+                --num_epochs 10  \
+                --batch_size 512  \
                 --mode test \
-                --dataset SMD  \
-                --data_path /media/media02/mhzheng/dataset/SMD  \
-                --input_c 38 \
-                --output_c 38 \
-                --n_memory 10 \
-                --lr 1e-6 \
+                --dataset PSM  \
+                --data_path /media/media02/mhzheng/dataset/PSM  \
+                --lambd 0.1 \
+                --input_c 25 \
+                --output_c 25 \
+                --n_memory 25 \
                 --memory_initial False \
-                --phase_type test\
+                --phase_type test \
                 --ffn_ratio 1 \
                 --patch_size 8 \
                 --patch_stride 4 \
@@ -67,3 +69,6 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --cache_window 14400 \
+                --score_window 30\
+                --backbone SeparableTCN \

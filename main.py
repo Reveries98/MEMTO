@@ -19,6 +19,7 @@ def str2bool(v):
 
 def main(config):
     cudnn.benchmark = True
+    # torch.manual_seed(2025)
     if (not os.path.exists(config.model_save_path)):
         mkdir(config.model_save_path)
     if config.backbone == 'Transformer':

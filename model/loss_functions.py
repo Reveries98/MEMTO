@@ -110,10 +110,11 @@ class EntropyLoss(nn.Module):
         '''
         x (attn_weights) : TxM
         '''
-        loss = -1 * x * torch.log(x + self.eps)
-        loss = torch.sum(loss, dim=-1)
-        loss = torch.mean(loss)
-        return loss
+        # loss = -1 * x * torch.log(x + self.eps)
+        # loss = torch.sum(loss, dim=-1)
+        # loss = torch.mean(loss)
+        # return loss
+        return -torch.sum(x * torch.log(x + 1e-6), dim=-1).mean()
 
 
 class NearestSim(nn.Module):

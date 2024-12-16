@@ -8,7 +8,6 @@ import os
 import time
 from utils.utils import *
 from model.Transformer import TransformerVar
-from model.ModernTCN import Model
 from model.loss_functions import *
 from data_factory.data_loader import get_loader_segment
 import logging
@@ -154,6 +153,10 @@ class Solver(object):
 
     def build_model(self,memory_init_embedding):
         if "TCN" in self.backbone:
+            if self.backbone == "ModernTCN":
+                from model.ModernTCN import Model
+            else:
+                from model.SeparableTCN import Model
             self.model = Model( configs=self.configs, memory_initial=self.memory_initial, memory_init_embedding=memory_init_embedding, phase_type=self.phase_type, dataset_name=self.dataset)
         else:
             self.model = TransformerVar(win_size=self.win_size, enc_in=self.input_c, c_out=self.output_c, configs=self.configs, \
@@ -176,6 +179,7 @@ class Solver(object):
             
             rec_loss = self.criterion(output, input)
             entropy_loss = self.entropy_loss(attn)
+            # entropy_loss = 0
             loss = rec_loss + self.lambd * entropy_loss
 
             valid_re_loss_list.append(rec_loss.detach().cpu().numpy())
@@ -192,7 +196,8 @@ class Solver(object):
         path = self.model_save_path
         if not os.path.exists(path):
             os.makedirs(path)
-        early_stopping = OneEarlyStopping(patience=3, verbose=True, dataset_name=self.dataset, type=training_type)
+        early_stopping = OneEarlyStopping(patience=5, verbose=True, dataset_name=self.dataset, type=training_type)
+        
         train_steps = len(self.train_loader)
 
         from tqdm import tqdm
@@ -215,8 +220,8 @@ class Solver(object):
                 # print(memory_item_embedding.shape)
                 rec_loss = self.criterion(output, input)
                 entropy_loss = self.entropy_loss(attn)
+                # entropy_loss = 0
                 loss = rec_loss + self.lambd * entropy_loss
-                
                 loss_list.append(loss.detach().cpu().numpy())
                 entropy_loss_list.append(entropy_loss.detach().cpu().numpy())
                 rec_loss_list.append(rec_loss.detach().cpu().numpy())
@@ -270,6 +275,8 @@ class Solver(object):
         gathering_loss = GatheringLoss(reduce=False)
         temperature = self.temperature
 
+        self.criterion = nn.MSELoss(reduction='mean')
+        self.score = nn.MSELoss(reduction='none')
         train_attens_energy = []
         for i, (input_data, labels) in enumerate(self.train_loader):
             input = input_data.float().to(self.device)
@@ -277,7 +284,8 @@ class Solver(object):
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
             rec_loss = torch.mean(abs(input-output),dim=-1)
-            latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
+            # rec_loss = torch.mean(self.score(input,output),dim=-1)
+            # latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
             # loss = latent_score * rec_loss
             loss = rec_loss
 
@@ -294,7 +302,9 @@ class Solver(object):
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
             rec_loss = torch.mean(abs(input-output),dim=-1)
-            latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
+
+            # rec_loss = torch.mean(self.score(input,output),dim=-1)
+            # latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
             # loss = latent_score * rec_loss
             loss = rec_loss
 
@@ -308,8 +318,7 @@ class Solver(object):
         
         thresh = np.percentile(combined_energy, 100 - self.anomaly_ratio)
         print("Threshold :", thresh)
-        # init_thresh = np.median(combined_energy)+10*(np.percentile(combined_energy, 75) - np.percentile(combined_energy, 25))
-        init_thresh = np.mean(combined_energy)+3*np.std(combined_energy)
+        init_thresh = thresh
 
         distance_with_q = []
         reconstructed_output = []
@@ -322,14 +331,26 @@ class Solver(object):
         cache_threshs = []
         for i, (input_data, labels) in enumerate(self.test_loader):
             input = input_data.float().to(self.device)
-            output_dict= self.model(input)
-            output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
+            update_flag = False
+            self.optimizer.zero_grad()
+            if i % 100 == 0:
+                print("update")
+                update_flag = True
+            output_dict= self.model(input,update_flag)
+            output, queries, mem_items, attn = output_dict['out'], output_dict['queries'], output_dict['mem'], output_dict['attn']
+            rec_loss = self.criterion(output, input)
+            en_loss = self.entropy_loss(attn)
+            loss = rec_loss + self.lambd * en_loss
+            if update_flag:
+                loss.backward()
+                self.optimizer.step()
+            score = torch.mean(abs(input-output),dim=-1)
 
-            rec_loss = torch.mean(abs(input-output),dim=-1)
+            # score = torch.mean(self.score(input,output),dim=-1)
             # latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
             # loss = latent_score * rec_loss
-            loss = rec_loss
-            cri = loss.detach().cpu().numpy()
+            loss = score
+            cri = score.detach().cpu().numpy()
             test_attens_energy = np.append(test_attens_energy, cri[:,-1])###
             # print(test_attens_energy.shape)
             # score = np.array(test_attens_energy[-self.score_window:])
@@ -346,20 +367,22 @@ class Solver(object):
 
             reconstructed_output.append(output[:,-1:,:].detach().cpu().numpy())
             original_output.append(input[:,-1:,:].detach().cpu().numpy())
-            rec_loss_list.append(rec_loss.detach().cpu().numpy())
+            # rec_loss_list.append(rec_loss.detach().cpu().numpy())
+        
         # thresh = np.zeros(len(test_attens_energy))
         # for i in range(len(test_attens_energy)):
-        #     if i < self.score_window:
+            # if i < self.score_window:
         #         thresh[i] = init_thresh
         #         continue
         #     # score_thresh = np.median(test_attens_energy[i-self.score_window:i])+10*(np.percentile(test_attens_energy[i-self.score_window:i], 75) - np.percentile(test_attens_energy[i-self.score_window:i], 25))
         #     score_thresh = np.mean(test_attens_energy[i-self.score_window:i])+3*np.std(test_attens_energy[i-self.score_window:i])
-        #     if i < self.cache_window:
-        #         thresh[i] = score_thresh if score_thresh > init_thresh else init_thresh
-        #     else:
+            # if i < self.cache_window:
+            #     thresh[i] = init_thresh
+            # else:
         #         # cache_thresh = np.median(test_attens_energy[i-self.cache_window:i])+10*(np.percentile(test_attens_energy[i-self.cache_window:i], 75) - np.percentile(test_attens_energy[i-self.cache_window:i], 25))
         #         cache_thresh = np.mean(test_attens_energy[i-self.cache_window:i])+3*np.std(test_attens_energy[i-self.cache_window:i])
-        #         thresh[i] = score_thresh if score_thresh > cache_thresh else cache_thresh
+                # attn = test_attens_energy[i-self.cache_window:i]
+                # thresh[i] = np.percentile(attn, 100 - self.anomaly_ratio)
         # thresh = np.array(thresh)
         # test_attens_energy = np.concatenate(test_attens_energy, axis=0).reshape(-1)
         test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
@@ -368,7 +391,7 @@ class Solver(object):
 
         reconstructed_output = np.concatenate(reconstructed_output,axis=0).reshape(-1)
         original_output = np.concatenate(original_output,axis=0).reshape(-1)
-        rec_loss_list = np.concatenate(rec_loss_list,axis=0).reshape(-1)
+        # rec_loss_list = np.concatenate(rec_loss_list,axis=0).reshape(-1)
 
 
         #reconstruct_path = f"./hyperparameters_tuning/reconstruction/{self.dataset}_"
@@ -396,7 +419,13 @@ class Solver(object):
         #np.save(dist_path+'abnormal_dist_only_gl', abnormal_dist)
         print(test_energy.shape)
         pred = (test_energy > thresh).astype(int)
-
+        # exceedances = test_energy
+        # [test_energy > init_thresh] - init_thresh  # 超出部分
+        # from scipy.stats import genpareto
+        # params = genpareto.fit(exceedances)
+        # shape, loc, scale = params
+        # dynamic_threshold = init_thresh + genpareto.ppf(1-self.anomaly_ratio, shape, loc, scale)
+        # pred = (test_energy > dynamic_threshold).astype(int)
         gt = test_labels.astype(int)
         def visualize_energy(energy,pred,gt,orgin,recons,thresh,path):
             orgin = orgin.reshape(-1,self.input_c)
@@ -496,21 +525,24 @@ class Solver(object):
         self.model.eval()
         import sys
         k_output = []
+        torch.manual_seed(2025)
         for i, (input_data, labels) in enumerate(self.k_loader):
             
             input = input_data.float().to(self.device)
             with torch.no_grad():
                 if i==0:
-                    output= self.model(input)['queries']
-                    output = torch.cat([output[0],output[1:,-1,:]],dim=0)
+                    output= self.model(input)['queries'].reshape(-1,self.dims[-1]*(self.win_size//self.patch_stride))
                 else:
                     out = self.model(input)['queries']
-                    output = torch.cat((output,out[:,-1,:]),dim=0)
+                    output = torch.cat((output,out.reshape(-1,self.dims[-1]*(self.win_size//self.patch_stride))),dim=0)
+        
+        sampled_indices = torch.multinomial(torch.ones(len(output)), output.shape[0]//self.patch_size, replacement=False)
+        output = output[sampled_indices]
         self.memory_init_embedding = k_means_clustering(x=output, n_mem=self.n_memory, d_model=self.dims[-1]*(self.win_size//self.patch_stride))
 
         self.memory_initial = False
 
-        self.build_model(memory_init_embedding = self.memory_init_embedding.detach())
+        self.build_model(memory_init_embedding = self.memory_init_embedding)
 
         memory_item_embedding = self.train(training_type=training_type)
 

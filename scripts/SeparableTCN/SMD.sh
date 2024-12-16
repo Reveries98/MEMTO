@@ -7,8 +7,8 @@ python main.py --anomaly_ratio 0.5 \
                 --data_path /media/media02/mhzheng/dataset/SMD  \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
-                --lambd 0 \
+                --n_memory 38 \
+                --lambd 0.005 \
                 --lr 5e-4 \
                 --memory_initial False \
                 --phase_type Nonr\
@@ -21,6 +21,7 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --backbone SeparableTCN\
 
 python main.py --anomaly_ratio 0.5 \
                 --num_epochs 20  \
@@ -30,7 +31,7 @@ python main.py --anomaly_ratio 0.5 \
                 --data_path /media/media02/mhzheng/dataset/SMD  \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
+                --n_memory 38 \
                 --lambd 0.1 \
                 --lr 1e-4 \
                 --memory_initial True \
@@ -44,6 +45,7 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --backbone SeparableTCN\
 
 # test
 python main.py --anomaly_ratio 0.5 \
@@ -54,7 +56,7 @@ python main.py --anomaly_ratio 0.5 \
                 --data_path /media/media02/mhzheng/dataset/SMD  \
                 --input_c 38 \
                 --output_c 38 \
-                --n_memory 10 \
+                --n_memory 38 \
                 --lr 1e-6 \
                 --memory_initial False \
                 --phase_type test\
@@ -67,3 +69,4 @@ python main.py --anomaly_ratio 0.5 \
                 --dims 32 \
                 --head_dropout 0.1 \
                 --dropout 0.1 \
+                --backbone SeparableTCN\

@@ -125,56 +125,60 @@ class ReparamLargeKernelConv(nn.Module):
             self.__delattr__('small_conv')
 
 class Block(nn.Module):
-    def __init__(self, large_size, small_size, dmodel, dff, nvars, small_kernel_merged=False, drop=0.1):
+    def __init__(self, large_size, small_size, patchnum, dff, nvars, small_kernel_merged=False, drop=0.1):
 
         super(Block, self).__init__()
-        self.dw = ReparamLargeKernelConv(in_channels=nvars * dmodel, out_channels=nvars * dmodel,
-                                         kernel_size=large_size, stride=1, groups=nvars * dmodel,
-                                         small_kernel=small_size, small_kernel_merged=small_kernel_merged, nvars=nvars)
-        self.norm = nn.BatchNorm1d(dmodel)
-
+        self.dw = nn.Conv1d(
+            nvars*patchnum, nvars*patchnum, kernel_size=small_size,
+            stride=1, padding=small_size//2, groups=nvars*patchnum, bias=True,dilation=1,
+        )
+        self.norm = nn.BatchNorm1d(patchnum)
+        self.norm1 = nn.BatchNorm1d(nvars*patchnum)
         #convffn1
-        self.ffn1pw1 = nn.Conv1d(in_channels=nvars * dmodel, out_channels=nvars * dff, kernel_size=1, stride=1,
-                                 padding=0, dilation=1, groups=nvars)
+        self.ffn1pw1 = nn.Conv1d(in_channels=nvars * patchnum
+                                 , out_channels=nvars * patchnum, kernel_size=1, stride=1,
+                                 padding=0, dilation=1, groups=patchnum
+                                 )
         self.ffn1act = nn.GELU()
-        self.ffn1pw2 = nn.Conv1d(in_channels=nvars * dff, out_channels=nvars * dmodel, kernel_size=1, stride=1,
-                                 padding=0, dilation=1, groups=nvars)
+        self.ffn1pw2 = nn.Conv1d(in_channels=nvars * patchnum, out_channels=nvars * patchnum, kernel_size=1, stride=1,
+                                 padding=0, dilation=1, groups=patchnum)
         self.ffn1drop1 = nn.Dropout(drop)
         self.ffn1drop2 = nn.Dropout(drop)
 
         #convffn2
-        self.ffn2pw1 = nn.Conv1d(in_channels=nvars * dmodel, out_channels=nvars * dff, kernel_size=1, stride=1,
-                                 padding=0, dilation=1, groups=dmodel)
-        self.ffn2act = nn.GELU()
-        self.ffn2pw2 = nn.Conv1d(in_channels=nvars * dff, out_channels=nvars * dmodel, kernel_size=1, stride=1,
-                                 padding=0, dilation=1, groups=dmodel)
-        self.ffn2drop1 = nn.Dropout(drop)
-        self.ffn2drop2 = nn.Dropout(drop)
+        self.ffnpw1 = nn.Conv1d(in_channels=nvars * patchnum, out_channels=nvars * patchnum, kernel_size=1, stride=1,
+                                 padding=0 ,bias=True,groups=nvars)
+        self.ffnact = nn.GELU()
+        self.ffnpw2 = nn.Conv1d(in_channels=nvars * patchnum, out_channels=nvars * patchnum, kernel_size=1, stride=1,
+                                 padding=0 ,bias=True,groups=nvars)
+        self.ffndrop1 = nn.Dropout(drop)
+        self.ffndrop2 = nn.Dropout(drop)
 
-        self.ffn_ratio = dff//dmodel
+        self.ffn_ratio = dff//patchnum
     def forward(self,x):
 
         input = x
-        B, M, D, N = x.shape
-        x = x.reshape(B,M*D,N)
+        B, M, N, D = x.shape
+        x = x.reshape(B,M*N,D)
         x = self.dw(x)
-        x = x.reshape(B,M,D,N)
-        x = x.reshape(B*M,D,N)
+        x = self.norm1(x)
+        x = x.reshape(B,M,N,D)
+        x = x.reshape(B*M,N,D)
         x = self.norm(x)
-        x = x.reshape(B, M, D, N)
-        x = x.reshape(B, M * D, N)
+        x = x.reshape(B, M, N,D)
+        x = x.reshape(B, M * N,D)
 
+        x = self.ffndrop1(self.ffnpw1(x))
+        x = self.ffnact(x)
+        x = self.ffndrop2(self.ffnpw2(x))
+        x = x.reshape(B, M, N, D)
+
+        x = x.permute(0, 2, 1, 3)
+        x = x.reshape(B, N * M, D)
         x = self.ffn1drop1(self.ffn1pw1(x))
         x = self.ffn1act(x)
         x = self.ffn1drop2(self.ffn1pw2(x))
-        x = x.reshape(B, M, D, N)
-
-        x = x.permute(0, 2, 1, 3)
-        x = x.reshape(B, D * M, N)
-        x = self.ffn2drop1(self.ffn2pw1(x))
-        x = self.ffn2act(x)
-        x = self.ffn2drop2(self.ffn2pw2(x))
-        x = x.reshape(B, D, M, N)
+        x = x.reshape(B, N, M, D)
         x = x.permute(0, 2, 1, 3)
 
         x = input + x
@@ -182,14 +186,15 @@ class Block(nn.Module):
 
 
 class Stage(nn.Module):
-    def __init__(self, ffn_ratio, num_blocks, large_size, small_size, dmodel, dw_model, nvars,
+    def __init__(self, ffn_ratio, num_blocks, large_size, small_size, dmodel, dw_model, nvars, patchnum,
                  small_kernel_merged=False, drop=0.1):
 
         super(Stage, self).__init__()
         d_ffn = dmodel * ffn_ratio
+        # d_ffn = patchnum * nvars
         blks = []
         for i in range(num_blocks):
-            blk = Block(large_size=large_size, small_size=small_size, dmodel=dmodel, dff=d_ffn, nvars=nvars, small_kernel_merged=small_kernel_merged, drop=drop)
+            blk = Block(large_size=large_size, small_size=small_size, patchnum=patchnum, dff=d_ffn, nvars=nvars, small_kernel_merged=small_kernel_merged, drop=drop)
             blks.append(blk)
 
         self.blocks = nn.ModuleList(blks)
@@ -202,12 +207,12 @@ class Stage(nn.Module):
         return x
 
 
-class ModernTCN(nn.Module):
+class SeparableTCN(nn.Module):
     def __init__(self,patch_size,patch_stride, stem_ratio, downsample_ratio, ffn_ratio, num_blocks, large_size, small_size, dims, dw_dims,
                  nvars, small_kernel_merged=False, backbone_dropout=0.1, head_dropout=0.1, use_multi_scale=True, revin=True, affine=True,
                  subtract_last=False, freq=None, seq_len=512, c_in=7, individual=False, target_window=96, class_drop=0.,class_num = 10,n_memory=10,phase_type=None,device=None,dataset_name=None,shrink_thres=0.05,memory_init_embedding=None,memory_initial = False):
 
-        super(ModernTCN, self).__init__()
+        super(SeparableTCN, self).__init__()
         self.class_drop = class_drop
         self.class_num = class_num
         self.memory_initial  = memory_initial
@@ -218,34 +223,17 @@ class ModernTCN(nn.Module):
         if self.revin: self.revin_layer = RevIN(c_in, affine=affine)
 
         # stem layer & down sampling layers
-        self.downsample_layers = nn.ModuleList()
-
-        stem = nn.Linear(patch_size,dims[0])
-        self.downsample_layers.append(stem)
-
-        self.num_stage = len(num_blocks)
-        if self.num_stage > 1:
-            for i in range(self.num_stage - 1):
-                downsample_layer = nn.Sequential(
-                    nn.BatchNorm1d(dims[i]),
-                    nn.Conv1d(dims[i], dims[i + 1], kernel_size=downsample_ratio, stride=downsample_ratio),
-                )
-                self.downsample_layers.append(downsample_layer)
-
+        self.downsample_layer = nn.Linear(patch_size,dims[0])
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         self.downsample_ratio = downsample_ratio
 
         # backbone
-        self.num_stage = len(num_blocks)
-        self.stages = nn.ModuleList()
-        for stage_idx in range(self.num_stage):
-            layer = Stage(ffn_ratio, num_blocks[stage_idx], large_size[stage_idx], small_size[stage_idx], dmodel=dims[stage_idx],
-                          dw_model=dw_dims[stage_idx], nvars=nvars, small_kernel_merged=small_kernel_merged, drop=backbone_dropout)
-            self.stages.append(layer)
-
-        # head
         patch_num = seq_len // patch_stride
+        self.num_stage = len(num_blocks)
+        self.stage = Stage(ffn_ratio, num_blocks[0], large_size[0], small_size[0], dmodel=dims[0],
+                          dw_model=dw_dims[0], nvars=nvars, patchnum = patch_num, small_kernel_merged=small_kernel_merged, drop=backbone_dropout)
+        # head
         self.n_vars = c_in
         self.individual = individual
 
@@ -272,36 +260,33 @@ class ModernTCN(nn.Module):
         self.norm = nn.LayerNorm(d_model)
         self.mem_module = MemoryModule(n_memory=n_memory, fea_dim=d_model*patch_num, shrink_thres=shrink_thres, device=device, memory_init_embedding=memory_init_embedding, phase_type=phase_type, dataset_name=dataset_name)
         self.mem_norm = nn.LayerNorm(n_memory)
+        # if phase_type == 'test':
+        #     self.downsample_layer.requires_grad_ = False
+        #     self.stage.blocks[0].requires_grad_ = False
+        #     self.head_dection1.requires_grad_ = False
+            # self.stage.blocks[0].ffnpw2.requires_grad_ = False
+
 
 
     def forward_feature(self, x, te=None):
 
         B,M,L=x.shape
         x = x.unsqueeze(-2)
-        for i in range(self.num_stage):
-            B, M, D, N = x.shape
-            x = x.reshape(B * M, D, N)
-            if i==0:
-                if self.patch_size != self.patch_stride:
-                    # stem layer padding
-                    pad_len = self.patch_size - self.patch_stride
-                    pad = x[:,:,-1:].repeat(1,1,pad_len)
-                    x = torch.cat([x,pad],dim=-1)
-                x = x.reshape(B,M,1,-1).squeeze(-2)
-                x = x.unfold(dimension=-1, size=self.patch_size, step=self.patch_stride)
-                x = self.downsample_layers[i](x)
-                x = x.permute(0,1,3,2)
-            else:
-                if N % self.downsample_ratio != 0:
-                    pad_len = self.downsample_ratio - (N % self.downsample_ratio)
-                    x = torch.cat([x, x[:, :, -pad_len:]],dim=-1)
-                    x = self.downsample_layers[i](x)
-                    _, D_, N_ = x.shape
-                    x = x.reshape(B, M, D_, N_)
-            x = self.stages[i](x)
+        B, M, D, N = x.shape
+        x = x.reshape(B * M, D, N)
+        if self.patch_size != self.patch_stride:
+            # stem layer padding
+            pad_len = self.patch_size - self.patch_stride
+            pad = x[:,:,-1:].repeat(1,1,pad_len)
+            x = torch.cat([x,pad],dim=-1)
+        x = x.reshape(B,M,1,-1).squeeze(-2)
+        x = x.unfold(dimension=-1, size=self.patch_size, step=self.patch_stride)
+        x = self.downsample_layer(x)
+        # x = x.permute(0,1,3,2)
+        x = self.stage(x)
         return x
 
-    def detection(self,x,update_flag):
+    def detection(self, x, update_flag):
 
         if self.revin:
             x = x.permute(0, 2, 1)
@@ -309,20 +294,20 @@ class ModernTCN(nn.Module):
             x = x.permute(0, 2, 1)
 
         x = self.forward_feature(x, te=None)
-        x = x.permute(0, 1, 3, 2)
+        # x = x.permute(0, 1, 3, 2)
         x = self.norm(x)
         b, v, n ,l = x.shape
         k_x = x.reshape(b, v, -1)
-        # out, attn, memory_item_embedding,mem = x, None, None, None
-        outputs = self.mem_module(k_x,update_flag)
+        outputs = self.mem_module(k_x, update_flag)
         out, attn, memory_item_embedding = outputs['output'], outputs['attn'], outputs['memory_init_embedding']
         mem = self.mem_module.mem
-        out = x+self.norm(out.reshape(b, v, 2, n, l)[:,:,1,:,:])         # 0: query 1: attn * memory
+        out = self.norm(out.reshape(b, v, 2, n, l)[:,:,1,:,:])         # 0: query 1: attn * memory
+        out = torch.zeros_like(out)
         # temp = torch.mul(out,x)
         # out = self.head_dropout(out)
         # print(out.shape, x.shape)
         # exit()
-        x = self.head_dropout(self.head_dection1( out ))
+        x = self.head_dropout(self.head_dection1(x + out ))
         # x = torch.cat([x,out],dim=-1)
         # x = self.head_dropout(self.head_dection1(x))
         B,M,_,_=x.shape
@@ -337,9 +322,9 @@ class ModernTCN(nn.Module):
         else:
             return {"out":x, "memory_item_embedding":memory_item_embedding, "queries":k_x, "mem":mem, "attn":attn}
 
-    def forward(self, x, update_flag = False, te=None):
+    def forward(self, x, te=None, update_flag = False):
 
-        x = self.detection(x,update_flag)
+        x = self.detection(x, update_flag)
         return x
 
     def structural_reparam(self):
@@ -388,7 +373,7 @@ class Model(nn.Module):
         self.decomposition = configs.decomposition
 
 
-        self.model = ModernTCN(patch_size=self.patch_size, patch_stride=self.patch_stride, stem_ratio=self.stem_ratio,
+        self.model = SeparableTCN(patch_size=self.patch_size, patch_stride=self.patch_stride, stem_ratio=self.stem_ratio,
                            downsample_ratio=self.downsample_ratio, ffn_ratio=self.ffn_ratio, num_blocks=self.num_blocks,
                            large_size=self.large_size, small_size=self.small_size, dims=self.dims, dw_dims=self.dw_dims,
                            nvars=self.nvars, small_kernel_merged=self.small_kernel_merged,
@@ -398,9 +383,9 @@ class Model(nn.Module):
                            individual=self.individual, target_window=self.target_window,n_memory=self.n_memory, memory_initial = memory_initial,
                            shrink_thres=shrink_thres,memory_init_embedding=memory_init_embedding,phase_type=phase_type,dataset_name=dataset_name)
 
-    def forward(self, x, update_flag=False, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None):
+    def forward(self, x, update_flag = False, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None):
 
         x = x.permute(0, 2, 1)
         te = None
-        x = self.model(x, update_flag, te)
+        x = self.model(x, te ,update_flag)
         return x
