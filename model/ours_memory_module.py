@@ -98,32 +98,25 @@ class MemoryModule(nn.Module):
         with torch.no_grad():
             self.mem = self.mem.to(query.device)
     
-            # Step 1: 计算注意力分数 attn
-            # 使用 query 和 memory 的点积作为初步注意力分数
+            # Step 1: calculate attn
             attn = torch.matmul(query.detach(), self.mem.detach().T)  # T x M
-            attn = torch.softmax(attn, dim=-1)  # 确保分布为概率分布
+            attn = torch.softmax(attn, dim=-1)  
 
-            # 避免数值过小或为零，加一个小常数 epsilon
+            # epsilon
             epsilon = 1e-8
             attn = torch.clamp(attn, min=epsilon)
-
-
-            # Step 2: 计算记忆更新向量 add_mem
+            # Step 2: memory update vector add_mem
             add_mem = torch.matmul(attn.T, query.detach())  # M x C
-
             update_gate = torch.sigmoid(self.U(self.mem) + self.W(add_mem))
         # with torch.no_grad():
-            # Step 4: 使用门控机制更新 memory
-            # 动量项用于防止记忆单元过快更新，同时增加稳定性
+            # Step 4: update memory by gating
+            # keep most memory
             momentum = 0.9
-            # if update_flag:
-            #     momentum += 0.09 ##在线时memory缓慢更新
             self.mem = momentum * self.mem + (1 - momentum) * (
                 (1 - update_gate) * self.mem + update_gate * add_mem
             )
 
-            # Step 5: 可选的归一化
-            # 归一化确保 memory 的值不会发散
+            # Step 5: Normalization
             self.mem = F.normalize(self.mem, dim=1)
 
 
